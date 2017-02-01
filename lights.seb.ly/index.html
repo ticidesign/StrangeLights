@@ -1,0 +1,765 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+  <head>
+	<title>Stranger Lights</title>
+	<!-- <script src="socket.io/socket.io.js"></script> -->
+	<script src="Vector2.js"></script>
+	<style>
+	body { 
+		margin:0px;
+		color:white; 
+		background-color: #221105;
+	}
+	#button {	
+		color : red;
+		font-family : sans-serif;
+		display : block; 
+		background : rgba(0,0,0,0.4); 
+		border : none; 
+		border-radius : 8px;  
+		
+		width:12em;
+		
+		padding : 1em;
+		text-align:center;
+		margin:1.5em;
+		padding-top:1em;
+		padding-bottom:1em;
+	
+		position:absolute;
+		cursor:pointer;
+		user-select: none;
+	}
+	#outputText { 
+		position:absolute;
+		font-family : sans-serif;
+		margin:2em; 
+		color : #cccccc;
+		pointer-events : none;
+		user-select: none;
+	}
+	canvas { 
+		user-select: none;	
+	}
+	</style>
+  </head>
+  <body>
+	
+	<div id="button">Request control</div>
+	<div id="outputText" ></div>
+	<script src="lightcolours.js"></script>
+	<script type="text/javascript">
+
+
+var name = ''; 
+var queue = []; 
+var queueLength = 0; 
+var roomList = []; 
+var sendingMessage = false; 
+var activeSenderName =""; 
+var mouseX = 0, mouseY = 0, lastMouseX, lastMouseY, mouseDown = false, lastMouseSent = 0; 
+var pointerImg = new Image(); 
+	pointerImg.src = 'pointer.png'; 
+var pointer = new RemotePointer(pointerImg); 
+var lastTouchTime = 0; 
+var lastStatus = {activeSenderName:""}; 
+
+var background = new Image(); 
+	background.src = 'wallbackground.jpg'; 
+var nextChangeTime = 0; 
+var canvas = document.createElement('canvas'); 
+var ctx = canvas.getContext('2d');
+var dirty = true; 
+
+var room = getQueryVariable("room") || "default";
+var debug = getQueryVariable("debug") || false;
+
+// var socket = initSocket(); 
+
+var outputTextDom = document.getElementById('outputText'); 
+
+var lights = [];
+var lightsById = {}; 
+
+var queueJoined = false; 
+var queueRequestWaiting = false; 
+
+var messages = []; 
+
+window.addEventListener('load', initialise); 
+window.addEventListener('resize', onResize); 
+
+var lightRects = [{"x":302.5,"y":133,"w":155,"h":232},{"x":495.5,"y":142.5,"w":142.5,"h":222.5},{"x":658.5,"y":155,"w":123.5,"h":218.5},{"x":814.5,"y":168.5,"w":140,"h":228},{"x":970.5,"y":165.5,"w":155,"h":235},{"x":1144.5,"y":201,"w":116.5,"h":194},{"x":1273.5,"y":212,"w":123.5,"h":190},{"x":1422.5,"y":198,"w":123.5,"h":205},{"x":54.5,"y":321.5,"w":190,"h":312},{"x":343.5,"y":411.5,"w":161.5,"h":243},{"x":528,"y":430.5,"w":144,"h":247},{"x":691,"y":453.5,"w":150.5,"h":226.5},{"x":851,"y":459,"w":135.5,"h":218.5},{"x":996.5,"y":425,"w":119.5,"h":221.5},{"x":1133.5,"y":400.5,"w":118,"h":252.5},{"x":1276,"y":414,"w":140,"h":245.5},{"x":1535.5,"y":425,"w":186,"h":264.5},{"x":229.5,"y":655.5,"w":160,"h":264.5},{"x":403,"y":688,"w":144,"h":241.5},{"x":560.5,"y":716.5,"w":116.5,"h":225.5},{"x":722,"y":726,"w":134.5,"h":217},{"x":879.5,"y":723.5,"w":141,"h":195.5},{"x":1035.5,"y":716.5,"w":135.5,"h":237.5},{"x":1182.5,"y":712.5,"w":119.5,"h":224},{"x":1315.5,"y":704.5,"w":145,"h":229.5},{"x":1490.5,"y":697.5,"w":180.5,"h":233.5}];
+	
+var bulbPositions = [{"x":400.5,"y":167},{"x":559.5,"y":174},{"x":683,"y":194},{"x":890.5,"y":228},{"x":1004.5,"y":232},{"x":1219,"y":282.5},{"x":1341,"y":259.5},{"x":1483.5,"y":258},{"x":171,"y":387},{"x":421,"y":461.5},{"x":570,"y":488.5},{"x":737,"y":509},{"x":904,"y":510},{"x":1029,"y":475},{"x":1183.5,"y":449.5},{"x":1323.5,"y":460},{"x":1622,"y":495.5},{"x":292,"y":699},{"x":452,"y":738.5},{"x":582.5,"y":779},{"x":783.5,"y":772.5},{"x":936.5,"y":778},{"x":1082.5,"y":760},{"x":1211,"y":755},{"x":1371,"y":738.5},{"x":1587,"y":756}]
+
+var rotations = [
+	-35, 	// A
+	-55,	// B
+	8, 		// C
+	10,		// D
+	-35, 	// E
+	-30,	// F
+	-65, 	// G
+	-25,	// H
+	5, 		// I
+	0, 		// J
+	-20,	// K
+	8,		// L
+	-10,	// M
+	-8, 	// N
+	-12,	// O
+	-13,	// P
+	13,		// Q
+	2, 		// R
+	20,		// S
+	8, 		// T
+	-60,	// U
+	5, 		// V
+	0, 		// W
+	-30, 	// X
+	0, 		// Y
+	-10 	// Z
+
+]; 
+
+
+function initialise() { 
+	initInterface(); 	
+	// start update cycle (it calls itself with requestAnimationFrame)
+	update(); 	
+}
+
+
+function initInterface() { 
+
+	document.body.appendChild(canvas); 
+	onResize(); 
+	
+	if('ontouchstart' in window){
+		canvas.addEventListener('touchstart', canvasTouchStart);
+		canvas.addEventListener('touchend', canvasTouchEnd); 
+		canvas.addEventListener('touchmove', canvasTouchMove); 
+	}
+	canvas.addEventListener('mousemove', canvasMouseMove); 
+	canvas.addEventListener('mousedown', canvasMouseDown); 
+	canvas.addEventListener('mouseup', canvasMouseUp);
+	canvas.addEventListener('mouseout', canvasMouseUp);	
+	
+	button.addEventListener('click', buttonPress); 
+	button.addEventListener('mousedown', function(e){e.preventDefault();}); 
+	
+	var letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'; 
+	
+	for(var i = 0; i<letters.length; i++) { 
+		var letter =  letters[i]; 
+		var light = new Light(lightRects[i], letter, bulbPositions[i], colours[lightColours[i]]); 
+		if(rotations.length>i) light.rotation = rotations[i]; 
+		lights.push(light); 
+		lightsById[letter] = light;	
+	}
+}
+
+function update() { 
+	
+	if(sendingMessage) { 
+		// send mouse position 10 times a second
+		if(Date.now()-lastMouseSent>100) { 
+			// if we haven't had any touch events for 5 secs, and the mouse has moved
+			// if((Date.now()-lastTouchTime>5000) && ((lastMouseX!=mouseX) || (lastMouseY!=mouseY))) {
+			// 	socket.emit('mouse', {x:mouseX, y:mouseY});
+			// }
+			lastMouseX = mouseX; 
+			lastMouseY = mouseY;
+			lastMouseSent = Date.now(); 
+		} 
+	}
+
+	updateDisplay(); 
+	
+	window.requestAnimationFrame(update);
+
+}
+
+
+
+function updateDisplay() { 
+	var flickerLight = Math.floor(Math.random()*lights.length*100); 
+	//var dimmed = ((activeSenderName=="")&&(socket.connected)); 
+	for(var i = 0; i<lights.length; i++) { 
+		//lights[i].dimmed = dimmed;
+		if((flickerLight==i)) lights[i].startFlicker(0.1); 
+		if(lights[i].update()) dirty = true; 
+	}
+	
+	if(pointer.update()) dirty = true; 
+	
+	
+	if(dirty) { 
+		ctx.save();
+		var s = canvas.width/background.width;  
+		ctx.scale(s,s); 
+		ctx.drawImage(background, 0,0); 
+	
+		ctx.strokeStyle = 'yellow'; 
+		ctx.fillStyle = 'white'; 
+		ctx.lineWidth = 5; 
+		for(var i = 0; i<lights.length; i++) { 
+			var l = lights[i]; 
+			l.render(ctx); 
+		}
+
+		pointer.render(ctx);
+
+		ctx.restore(); 
+	} else if(debug) { 
+		ctx.fillStyle = 'red'; 
+		ctx.fillRect(4,4,10,10); 
+		
+	}
+	// TODO store text in a string and compare before updating dom element
+	var oldText = outputTextDom.innerHTML; 
+	
+	var newText = ""; 
+
+	var changeTime = Math.ceil(((nextChangeTime-Date.now())/1000));
+	
+	// if(socket.connected) {
+	// 	if(sendingMessage) { 
+		
+	// 		if(changeTime<=10) { 
+	// 			if(Date.now()%500<300) {
+	// 				if(lastStatus.timeout)  
+	// 					newText = "<b>TIMEOUT IN "+changeTime+" SECOND"+(changeTime!=1?"S":""); 
+	// 				else 
+	// 					newText = "<b>"+changeTime+" SECOND"+(changeTime!=1?"S":"")+" LEFT!"; 
+						
+	// 			}
+	// 		} else {
+	// 			newText+="Send your message now!"; 
+	// 		}
+		
+	// 	} else { 
+	// 		newText = "Connected as <b>"+socket.name+"</b>"; 
+	// 		if(activeSenderName) {
+	// 			newText+="<br>"+activeSenderName+" is currently sending a message"; 
+	
+	// 			newText+="<br><br>";
+		
+	// 			if((changeTime>0) && (changeTime<19)) {
+	// 				if(lastStatus.timeout) 
+	// 				newText+="Next change in "+changeTime+" due to inactivity";
+	// 				else
+	// 					newText+="Next change in "+changeTime;
+	// 			} 
+	// 		} else newText+="<br><br>";
+	// 		if(queue.length>0) { 
+	// 			newText+="<br><br>Waiting list :";
+				
+	// 			for (var i = 0; i<queue.length; i++) { 
+	// 				var qname = queue[i]; 
+	// 				if(qname==name) {
+	// 					newText+="<br>"
+	// 					if(i==0) { 
+	// 						if((changeTime>10) || (Date.now()%500<300)) newText +="<b>"+qname+" < YOU'RE UP NEXT! </b>";
+	// 					} else { 
+	// 						newText +="<b>"+qname+"</b> < you ";
+	// 					}
+	// 				} else { 
+	// 					newText+="<br>" + qname;
+	//  				}
+					
+	// 			}
+	// 			if(queueLength>20) newText+="<br>... and "+(queueLength-20)+" more!";
+	// 		}
+	// 		newText+='<br clear="all">';
+	// 	}
+	// 	if(button.style.visibility !="") button.style.visibility = ""; 
+
+	// } else { 
+	// 	newText+="DISCONNECTED... please wait"; 
+	// 	if(button.style.visibility !="hidden") button.style.visibility = "hidden"; 
+	// }
+		
+	if(newText!=oldText) { 
+		outputTextDom.innerHTML = newText; 
+	} 
+	dirty = false; 
+}
+
+function onResize(){ 
+	canvas.width = window.innerWidth; 
+	canvas.height = window.innerWidth*background.height/background.width;
+	
+	var domScale = map(canvas.width, 100,1000,0.7,1,true); 
+	
+	//console.log(canvas.width, domScale); 
+	outputTextDom.style.transform = button.style.transform = "scale("+domScale+")"; 
+	outputTextDom.style.transformOrigin = "top left"; 
+	button.style.transformOrigin = "top right";
+	button.style.left = (canvas.width - button.offsetWidth*1.15)+'px'; 
+	
+	dirty = true; 
+}
+
+function Light(rect, letter, bulbpos, bulbColour) { 
+	
+	var rect = this.rect = rect; 
+	this.letter = letter; 
+	this.bulbPosition = bulbpos; 
+	this.bulbColour = bulbColour; 
+	this.lightOn = false; 
+	this.rotation = 0;
+	this.brightness = 0; 
+	var lastBrightness = 1; 
+	var dirty = true; 
+	var turnOnTime = 0; 
+	var turnOffDelay = 0; 
+	this.dimmed = false; 
+	var flickerCountdown = 0; 
+	var flickerOn = false; 
+	var flickerSpeed = Math.random()*5+4;
+	var flickerMinBrightness = 0; 
+	var fadeSpeed = Math.random()*0.3+0.05; 
+	
+	this.update = function() { 
+		
+		var target = this.brightness; 
+		var speed = -1; 
+		
+		if(flickerCountdown>0) { 
+			flickerCountdown--; 
+			target = (flickerCountdown%12<flickerSpeed)?0.5:flickerMinBrightness;
+			speed = 0.8; 
+		} else if(this.dimmed){ 
+			target = 0.5
+			speed = fadeSpeed; 
+		} else if(this.lightOn) { 
+			target = 1
+			speed = 0.85; 
+		} else { 
+			if(turnOffDelay>0) {
+				turnOffDelay--; 
+				target = 1
+				speed = 0.85; 
+			} else { 
+				target=0;
+				speed = 0.2;  
+			}
+		}
+		if(speed>0) this.brightness+=((target-this.brightness))*speed;
+		if(Math.abs(target-this.brightness)<0.01) this.brightness = target; 
+		
+		dirty = this.brightness!=lastBrightness; 
+		lastBrightness = this.brightness; 
+		return dirty; 
+		
+	}
+	this.render = function(ctx) { 
+		
+		if(this.brightness>0) { 
+		
+			var b = this.bulbPosition; 
+			
+			var h = bulbColour.h; 
+			var s = bulbColour.s; 
+			var l = bulbColour.l; 
+			
+			ctx.save(); 
+			ctx.globalAlpha = map(this.brightness,0,0.3,0,1, true); 
+			ctx.fillStyle = hsl(h, s, l); 
+			ctx.globalCompositeOperation = 'lighter'; 
+			ctx.translate(b.x, b.y); 
+		
+			var TORAD = Math.PI/180; 
+		
+			ctx.beginPath(); 
+			ctx.save(); 
+			ctx.rotate(Math.PI/180 * this.rotation); 
+			ctx.scale(0.5,1); 
+			ctx.arc(0,0,17.5,TORAD*225,TORAD*315,true); 
+			ctx.fill();
+			ctx.restore();
+		
+			ctx.rotate(Math.PI/180 * this.rotation); 
+			ctx.scale(1,0.9); 
+			var b = map(Math.sin(Date.now()/20)+Math.random(), -1,2,0.98,1)*this.brightness;
+			ctx.globalAlpha = map(b,0,1,0.6,0.9); 
+			ctx.scale(b, b); 
+		
+			var g = ctx.createRadialGradient(0,0,0,0,0,200); 
+			g.addColorStop(0,hsla(h,s,100,1)); 
+			g.addColorStop(0.07,hsla(h,s,100,1)); 
+			g.addColorStop(0.15,hsla(h,s,l,1));
+			g.addColorStop(0.4,hsla(h,s,l,0.2));
+			g.addColorStop(1,hsla(h,s,l,0));
+			ctx.fillStyle = g; 
+			ctx.beginPath();
+			ctx.arc(0,0,200,0,Math.PI*2,true); 
+			ctx.fill();
+		
+			ctx.restore(); 
+		
+		}
+		
+	}
+	
+	// this.turnOn = function(send) { 
+	// 	if(!this.lightOn) { 
+	// 		if(send) { 
+	// 			//console.log(this.letter+" on");
+	// 			socket.emit('letter', { letter:this.letter, type:'on', time:Date.now() });
+	// 		}
+	// 		this.lightOn = true; 
+	// 		turnOnTime = Date.now(); 
+	// 	}
+	// }
+
+	// this.turnOff = function(send) { 
+	// 	if(this.lightOn) { 
+	// 		if(send) { 
+	// 			//console.log(this.letter+" off");
+	//  			socket.emit('letter', { letter:this.letter, type:'off', time:Date.now() });
+	// 		}
+	// 		var framessinceturnon = Math.floor((Date.now()-turnOnTime)/16); // 16 mils per frame
+	// 		if(framessinceturnon<5) { 
+	// 			turnOffDelay = 5; 
+	// 		}
+			
+	// 		this.lightOn = false;
+			
+	// 	}
+	// }
+	
+	this.startFlicker = function(strength) { 
+		strength = (typeof strength !== 'undefined') ? strength : 1; // 1 is full strength
+		flickerCountdown = 24; 
+		flickerMinBrightness = 0.5-(strength/2); 
+		
+		
+	}
+	
+	this.hitTest = function(x,y) { 
+		if((x<rect.x) || (x>rect.x+rect.w) ) return false; 
+		else if((y<rect.y) || (y>rect.y+rect.h) ) return false; 
+		else return true; 
+	}
+}
+
+
+
+
+function canvasTouchStart(e) { 
+	updateTouches(e.touches); 
+	e.preventDefault();
+}
+function updateTouches(touches) { 
+
+	lastTouchTime = Date.now();
+
+	//if((!sendingMessage) &&(socket.connected)) return; 
+	
+	var s = background.width/canvas.width; 
+
+
+	for(var i = 0; i<lights.length; i++)  { 
+		var l = lights[i]; 
+	
+		
+		var lighton = false; 
+		
+		for(var j = 0; j<touches.length;j++) { 
+
+			var touch = touches[j]; 
+
+			mouseX = (touch.pageX)*s; 
+			mouseY = (touch.pageY)*s;
+			
+			if(l.hitTest(mouseX, mouseY)) { 
+				lighton = true; 
+			
+			}
+
+		}
+		
+		if(lighton) l.turnOn(true); 
+		else l.turnOff(true);
+	
+	}
+}
+
+function canvasTouchMove(e) { 
+	updateTouches(e.touches); 
+	e.preventDefault();
+}
+function canvasTouchEnd(e) { 
+	updateTouches(e.touches); 
+	e.preventDefault();
+}
+
+function canvasMouseMove(e) {
+	
+	var s = background.width/canvas.width; 
+
+	mouseX = (e.offsetX)*s; 
+	mouseY = (e.offsetY)*s;
+
+	//if((!sendingMessage) &&(socket.connected)) return; 
+
+	for(var i = 0; i<lights.length; i++)  { 
+		var l = lights[i]; 
+		if((l.lightOn) && (!l.hitTest(mouseX, mouseY))) { 
+			l.turnOff(true); 
+		}
+		else if((mouseDown) && (!l.lightOn) && (l.hitTest(mouseX, mouseY))) {
+			l.turnOn(true); 
+		}
+		
+	}
+
+
+}
+
+function canvasMouseDown(e) { 
+
+	mouseDown = true; 
+
+	e.preventDefault();
+	//if((!sendingMessage) &&(socket.connected)) return; 
+	
+	for(var i = 0; i<lights.length; i++)  { 
+
+		var l = lights[i]; 
+		if(l.hitTest(mouseX, mouseY)) { 
+			l.turnOn(true); 
+		}
+		
+	}
+
+
+}
+function canvasMouseUp(e) { 
+	mouseDown = false; 
+
+	//if((!sendingMessage) &&(socket.connected)) return; 
+	
+	for(var i = 0; i<lights.length; i++)  { 
+		var l = lights[i]; 
+		
+		if(l.lightOn) l.turnOff(true); 
+
+	}	
+}
+
+
+
+// function initSocket() { 
+// 	var socket = io.connect();
+
+// 	socket.on('led', function (data) {
+	
+// 	});
+// 	socket.on('connect', function() { 
+// 		socket.emit('register', {type:'sender', room:room}); 
+// 	});
+// 	socket.on('registered', function(data) { 
+// 		console.log('registered', data); 
+// 		socket.name = name = data.name;
+// 		socket.timeOffset =   Date.now() - data.time;
+		
+// 		setControl(false);
+// 		updateDisplay();
+// 	});
+	
+// 	socket.on('control', function(state) { 
+// 		console.log('control', state); 
+// 		// outputTextDom.innerHTML = "control : "+state;
+// 		setControl(state); 
+// 		updateDisplay(); 
+// 		queueJoined = false;
+	
+// 	});
+// 	function setControl(state) { 
+// 		sendingMessage = state;
+// 		button.innerText=sendingMessage?"Stop sending" : "Send a message";
+// 	}
+// 	socket.on('letter', function(data) { 
+// 		//console.log('letter', data); 
+// 		var l = lightsById[data.letter];
+// 		if(l) {
+// 			if(data.type=='on') l.turnOn();
+// 			else if(data.type=='off') l.turnOff(); 
+// 		} 
+// 	});
+// 	socket.on('mouse', function(data) { 
+// 		if(!sendingMessage) pointer.setPosition(data.x, data.y); 
+// 	});
+	
+// 	socket.on('status', function(data) { 
+// 		console.log('status', data);
+// 		nextChangeTime = data.queueShiftTime + socket.timeOffset; 
+// 		queue = data.queue; 
+// 		if(data.activeSenderName!=activeSenderName) { 
+			
+// 			activeSenderName = data.activeSenderName; 
+// 			if(activeSenderName!="") flickerLights(); 
+// 		}
+// 		lastStatus = data; 
+// 		queueLength = data.queueLength; 
+// 	});
+	
+// 	socket.on('resetletters', function() { 
+// 		for(var i =0 ; i<lights.length;i++) { 
+// 			lights[i].lightOn = false; 
+// 		}	 
+// 	});
+	
+// 	socket.on('queuejoined', function(data) { 
+// 		console.log('queuejoined', data); 
+// 		button.innerText = "Leave queue"; 
+// 		queueJoined = true; 
+// 		queueRequestWaiting = false; 
+// 	});
+// 	socket.on('queueleft', function(data) { 
+// 		console.log('queueleft', data); 
+// 		button.innerText = "Send a message"; 
+// 		queueJoined = false; 
+// 		queueRequestWaiting = false; 
+// 	});
+// 	socket.on('reload', function(url) { 
+
+// 		if(url) { 
+// 				document.location = url;
+// 		} else {
+// 			if(room=="default") 
+// 				document.location = window.location.href.split("?")[0]+"?nocache="+Date.now(); 
+// 			else 
+// 				document.location = window.location.href.split("?")[0]+"?room="+room+"&nocache="+Date.now(); 
+// 		}
+// 	});
+	
+// 	return socket; 
+// }
+
+function flickerLights() { 
+	for(var i = 0; i<lights.length; i++) { 
+		lights[i].startFlicker(); 
+	}
+}
+function RemotePointer(img) { 
+	
+	var lastUpdate = 0; 
+	var targetPos = new Vector2(0,0); 
+	var pos = new Vector2(0,0); 
+	var vel = new Vector2(0,0); 
+	var lastPos = new Vector2(-1,-1); 
+	var alpha = 1; 
+	
+	this.update = function() { 
+		
+	
+		var lastAlpha = alpha; 
+		
+		if(Date.now()-lastUpdate > 3000) { 
+			alpha = map(Date.now()-lastUpdate, 3000,6000,1,0, true); 
+		} else { 
+			if(alpha<1) { 
+				alpha+=0.1; 
+				if(alpha>1) alpha = 1; 
+			}
+		}
+		
+		
+		var diff = targetPos.minusNew(pos); 
+		vel.multiplyEq(0.5); 
+		diff.multiplyEq(0.1); 
+		vel.plusEq(diff); 
+		pos.plusEq(vel); 
+		
+		if((pos.isCloseTo(targetPos,0.1))&&(vel.isMagLessThan(0.1))) {
+			pos.copyFrom(targetPos); 
+			vel.reset(0,0); 
+		}
+		
+		var dirty =  (!lastPos.isCloseTo(pos, 0.1)) || (lastAlpha!=alpha); 
+		lastPos.copyFrom(pos); 
+		
+		return dirty; 
+	}
+	this.render = function(ctx) {
+		var s = background.width/canvas.width*0.8;  
+		ctx.save(); 
+		ctx.globalAlpha = alpha; 
+		ctx.translate(pos.x, pos.y); 
+		ctx.scale(s, s); 
+		ctx.drawImage(img, 0,0);
+		ctx.restore(); 
+	}
+	
+	this.setPosition = function(x,y) { 
+		targetPos.reset(x,y); 
+		lastUpdate = Date.now(); 
+	
+	}
+	
+	
+	
+}
+
+function buttonPress() { 
+	console.log('queueRequestWaiting', queueRequestWaiting, sendingMessage, queueJoined);
+	if (!queueRequestWaiting) { 
+		if(!sendingMessage)  {
+			if(!queueJoined) { 
+				console.log('join queue'); 
+				socket.emit('joinqueue'); 
+				button.innerText="sending request";
+				queueRequestWaiting = true; 
+			} else { 
+				socket.emit('leavequeue'); 
+				button.innerText="sending request";
+				queueRequestWaiting = true; 
+			} 
+		
+		}  else { 
+			console.log("stopsending"); 
+			socket.emit('stopsending'); 
+		}
+	}
+}
+
+function rgb(r, g, b) { return 'rgb('+clamp(Math.round(r),0,255)+', '+clamp(Math.round(g),0,255)+', '+clamp(Math.round(b),0,255)+')';};
+function rgba(r, g, b, a) { return 'rgba('+clamp(Math.round(r),0,255)+', '+clamp(Math.round(g),0,255)+', '+clamp(Math.round(b),0,255)+', '+clamp(a,0,1)+')';};
+function hsl(h, s, l) { return 'hsl('+h+', '+clamp(s,0,100)+'%, '+clamp(l,0,100)+'%)';};
+function hsla(h, s, l, a) { return 'hsla('+h+', '+clamp(s,0,100)+'%, '+clamp(l,0,100)+'%, '+clamp(a,0,1)+')';};
+
+
+function map(value, min1, max1, min2, max2, clampResult) { 
+	var returnvalue = ((value-min1) / (max1 - min1) * (max2-min2)) + min2; 
+	if(clampResult) return clamp(returnvalue, min2, max2); 
+	else return returnvalue; 
+};
+
+function clamp(value, min, max) { 
+	if(max<min) { 
+		var temp = min; 
+		min = max; 
+		max = temp; 
+	}
+	return Math.max(min, Math.min(value, max)); 
+};
+function getQueryVariable(variable)
+{
+       var query = window.location.search.substring(1);
+console.log(query); 
+       var vars = query.split("&");
+       for (var i=0;i<vars.length;i++) {
+               var pair = vars[i].split("=");
+console.log(pair);
+               if(pair[0] == variable){return pair[1];}
+       }
+       return(false);
+}		
+	</script>
+  </body>
+</html>
